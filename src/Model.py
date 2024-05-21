@@ -37,7 +37,11 @@ class Model(nn.Module):
         image_embedding = self.encode_image(image)
         text_embedding = self.encode_text(text_ids)
         merged_embedding = self.merge(image_embedding, text_embedding)
-        attention_mask = self.create_attention_mask(image_embedding, text_embedding)
+
+        img_mask = torch.ones(image_embedding.size()[:-1], dtype=torch.long).to(self.device)
+        txt_mask = text_ids['attention_mask'].squeeze(1).to(self.device)
+        attention_mask = self.merge(img_mask, txt_mask)
+
         piped_out = self.pipeline(merged_embedding)
         return piped_out,attention_mask
 
@@ -49,22 +53,19 @@ class Model(nn.Module):
         return embedding
 
     def encode_text(self, text_ids):
-        text_ids = text_ids.to(self.device)
+        attention_mask = text_ids['attention_mask'].squeeze(1).to(self.device)
+        text_ids = text_ids['input_ids'].squeeze(1).to(self.device)
+        print(attention_mask.size(),text_ids.size())
         with torch.no_grad():
-            outputs = self.text_encoder(**text_ids)
+            outputs = self.text_encoder(input_ids=text_ids,attention_mask=attention_mask)
         embedding = outputs.last_hidden_state
         return embedding
     
-    def get_text_id(self,text,max_length = 128):
-        text_ids = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=max_length, padding = 'max_length')
-        return text_ids.to(self.device)
+    def get_text_id(self, text, max_length=50):
+        text_ids = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=max_length, padding='max_length')
+        return text_ids
+
     
     def merge(self, img_emb, text_emb):
         merged_embedding = torch.cat((img_emb, text_emb), dim=1)
         return merged_embedding.to(self.device)
-
-    def create_attention_mask(self, img_emb, text_emb):
-        img_mask = torch.ones(img_emb.size()[:-1], dtype=torch.long)
-        text_mask = torch.ones(text_emb.size()[:-1], dtype=torch.long)
-        combined_mask = torch.cat((img_mask, text_mask), dim=1)
-        return combined_mask.to(self.device)

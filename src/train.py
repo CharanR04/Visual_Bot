@@ -16,7 +16,6 @@ def one_epoch_caption(model,dataloader,optimizer):
         attention_mask = torch.ones(input_sequence.size()[:-1], dtype=torch.long).to('cuda')
 
         input_sequence = torch.cat((input_sequence, eos_embedding), dim=1)
-        print(attention_mask.device,eos_attention_mask.device)
         attention_mask = torch.cat((attention_mask, eos_attention_mask), dim=1)
         loss = 0
 

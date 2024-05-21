@@ -25,8 +25,6 @@ def generate_text(model, image, question:str=None, max_length:int=50):
         input_sequence = model.encode_image(image)
         attention_mask = torch.ones(input_sequence.size()[:-1], dtype=torch.long)
 
-    print(input_sequence.size(),eos_embedding.size())
-
     input_sequence = torch.cat((input_sequence, eos_embedding), dim=1)
     attention_mask = torch.cat((attention_mask, eos_attention_mask), dim=1)
 
