@@ -11,7 +11,7 @@ def one_epoch_caption(model,dataloader,optimizer):
 
     for batch_idx, (image,text_ids) in enumerate(tqdm(dataloader, total=len(dataloader), ncols=60)):
         optimizer.zero_grad()
-        target_ids = text_ids['input_ids'].squeeze(1).to(model.device)
+        target_ids = text_ids['input_ids'].squeeze(1)
 
         eos_embedding,eos_attention_mask = get_eos_embedding(model,image.size(0))
         input_sequence = model.encode_image(image)
@@ -46,7 +46,7 @@ def one_epoch_QA(model,dataloader,optimizer):
 
     for batch_idx, ((image,q_ids),text_ids) in enumerate(tqdm(dataloader, total=len(dataloader), ncols=60)):
         optimizer.zero_grad()
-        print(image.size())
+        target_ids = text_ids['input_ids'].squeeze(1)
         eos_embedding,eos_attention_mask = get_eos_embedding(model,image.size(0))
         input_sequence,attention_mask = model.get_sequence(image, q_ids)
 
@@ -57,8 +57,10 @@ def one_epoch_QA(model,dataloader,optimizer):
         for i in range(5):
             probablities = model(input_sequence,attention_mask)
             input_sequence,attention_mask = update_sequence_mask(model,probablities,input_sequence,attention_mask)
-            out_encoding = get_one_hot(text_ids,len(model.generator_tokenizer.vocab),i)
-            loss += F.cross_entropy(probablities,out_encoding)
+
+            target = target_ids[:, i]
+
+            loss += F.cross_entropy(probablities,target)
 
         train_loss += loss
 
