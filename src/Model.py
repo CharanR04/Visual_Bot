@@ -21,8 +21,8 @@ class Model(nn.Module):
         self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
         self.generator = BertModel.from_pretrained('google-bert/bert-base-uncased', cache_dir=cache_dir).to(self.device)
 
-        self.pipeline =nn.Linear(768,self.generator.config.hidden_size)
-        self.classifier = nn.Linear(self.generator.config.hidden_size, len(self.generator_tokenizer.vocab))
+        self.pipeline =nn.Linear(768,self.generator.config.hidden_size).to(self.device)
+        self.classifier = nn.Linear(self.generator.config.hidden_size, len(self.generator_tokenizer.vocab)).to(self.device)
 
         self = self.to(self.device)
 
@@ -38,7 +38,7 @@ class Model(nn.Module):
         text_embedding = self.encode_text(text_ids)
         merged_embedding = self.merge(image_embedding, text_embedding)
 
-        img_mask = torch.ones(image_embedding.size()[:-1], dtype=torch.long).to(self.device)
+        img_mask = torch.ones(image_embedding.size()[:-1], dtype=torch.long,device=self.device)
         txt_mask = text_ids['attention_mask'].squeeze(1).to(self.device)
         attention_mask = self.merge(img_mask, txt_mask)
 
@@ -55,7 +55,6 @@ class Model(nn.Module):
     def encode_text(self, text_ids):
         attention_mask = text_ids['attention_mask'].squeeze(1).to(self.device)
         text_ids = text_ids['input_ids'].squeeze(1).to(self.device)
-        print(attention_mask.size(),text_ids.size())
         with torch.no_grad():
             outputs = self.text_encoder(input_ids=text_ids,attention_mask=attention_mask)
         embedding = outputs.last_hidden_state
@@ -69,3 +68,16 @@ class Model(nn.Module):
     def merge(self, img_emb, text_emb):
         merged_embedding = torch.cat((img_emb, text_emb), dim=1)
         return merged_embedding.to(self.device)
+    
+    def set_eval(self):
+        self.image_encoder.eval()
+        self.text_encoder.eval()
+        self.generator.eval()
+        self.pipeline.eval()
+        self.classifier.eval()
+
+    def set_train(self):
+        self.image_encoder.train()
+        self.generator.train()
+        self.pipeline.train()
+        self.classifier.train()
