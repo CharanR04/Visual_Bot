@@ -11,16 +11,20 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        self.image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k', cache_dir=cache_dir)
-        self.image_encoder = ViTModel.from_pretrained("google/vit-base-patch16-224-in21k", cache_dir=cache_dir,use_mask_token=True).to(self.device)
+        self.image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k',cache_dir=cache_dir)
+        self.image_encoder = ViTModel.from_pretrained("google/vit-base-patch16-224-in21k" ,cache_dir=cache_dir,use_mask_token=True).to(self.device)
 
         self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
         self.text_encoder = AlbertModel.from_pretrained('albert-base-v2', cache_dir=cache_dir).to(self.device)
-
+        
         self.generator_tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased",cache_dir=cache_dir)
         self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
         self.generator = BertModel.from_pretrained('google-bert/bert-base-uncased', cache_dir=cache_dir).to(self.device)
-
+        """
+        self.generator_tokenizer=AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
+        self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
+        self.generator = GPTJModel.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
+        """
         self.pipeline =nn.Linear(768,self.generator.config.hidden_size).to(self.device)
         self.classifier = nn.Linear(self.generator.config.hidden_size, len(self.generator_tokenizer.vocab)).to(self.device)
 
@@ -39,22 +43,23 @@ class Model(nn.Module):
         merged_embedding = self.merge(image_embedding, text_embedding)
 
         img_mask = torch.ones(image_embedding.size()[:-1], dtype=torch.long,device=self.device)
-        txt_mask = text_ids['attention_mask'].squeeze(1).to(self.device)
+        txt_mask = text_ids['attention_mask'].squeeze(1)
         attention_mask = self.merge(img_mask, txt_mask)
 
         piped_out = self.pipeline(merged_embedding)
         return piped_out,attention_mask
 
     def encode_image(self, image):
-        inputs = self.image_processor(images=image, return_tensors="pt").to(self.device)
+        inputs = self.image_processor(images=image,do_rescale=False,return_tensors="pt").to(self.device)
         with torch.no_grad():
             outputs = self.image_encoder(pixel_values=inputs['pixel_values'])
         embedding = outputs.last_hidden_state
         return embedding
 
     def encode_text(self, text_ids):
-        attention_mask = text_ids['attention_mask'].squeeze(1).to(self.device)
-        text_ids = text_ids['input_ids'].squeeze(1).to(self.device)
+        text_ids = text_ids.to(self.device  )
+        attention_mask = text_ids['attention_mask'].squeeze(1)
+        text_ids = text_ids['input_ids'].squeeze(1)
         with torch.no_grad():
             outputs = self.text_encoder(input_ids=text_ids,attention_mask=attention_mask)
         embedding = outputs.last_hidden_state
@@ -67,7 +72,7 @@ class Model(nn.Module):
     
     def merge(self, img_emb, text_emb):
         merged_embedding = torch.cat((img_emb, text_emb), dim=1)
-        return merged_embedding.to(self.device)
+        return merged_embedding
     
     def set_eval(self):
         self.image_encoder.eval()

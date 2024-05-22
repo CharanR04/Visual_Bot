@@ -13,6 +13,8 @@ def one_epoch_caption(model,dataloader,optimizer):
         optimizer.zero_grad()
         target_ids = text_ids['input_ids'].squeeze(1)
 
+        target_ids = target_ids.to(model.device)
+
         eos_embedding,eos_attention_mask = get_eos_embedding(model,image.size(0))
         input_sequence = model.encode_image(image)
         attention_mask = torch.ones(input_sequence.size()[:-1], dtype=torch.long,device=model.device)
