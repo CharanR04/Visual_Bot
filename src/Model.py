@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -86,3 +87,17 @@ class Model(nn.Module):
         self.generator.train()
         self.pipeline.train()
         self.classifier.train()
+
+    def save_model(self, save_dir: str = 'Model'):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        torch.save(self.state_dict(), os.path.join(save_dir, 'model.pth'))
+        self.tokenizer.save_pretrained(save_dir)
+        self.generator_tokenizer.save_pretrained(save_dir)
+        self.image_processor.save_pretrained(save_dir)
+
+    def load_model(self, load_dir: str = 'Model'):
+        self.load_state_dict(torch.load(os.path.join(load_dir, 'model.pth'), map_location=self.device))
+        self.tokenizer = AlbertTokenizer.from_pretrained(load_dir)
+        self.generator_tokenizer = BertTokenizer.from_pretrained(load_dir)
+        self.image_processor = ViTImageProcessor.from_pretrained(load_dir)
