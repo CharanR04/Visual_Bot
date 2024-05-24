@@ -10,17 +10,18 @@ from transformers import AlbertModel, AlbertTokenizer
 from torchvision import transforms
 
 class CaptionDataset(Dataset):
-    def __init__(self, captions_file:str, cache_dir:str = 'Cache/Transformers'):
+    def __init__(self, captions_file:str, cache_dir:str = 'Cache/Transformers',small:bool= False):
         self.dataset = VizWiz(annotation_file = captions_file)
         self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
         self.text_encoder = AlbertModel.from_pretrained('albert-base-v2', cache_dir=cache_dir)
         self.text_encoder.eval()
+        self.small = small
         self.mean,self.std = self.compute_mean_and_std()
         self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor(),transforms.Normalize(mean=self.mean, std=self.std)])
         self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor()])
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.dataset)//32 if self.small else len(self.dataset)
 
     def __getitem__(self, idx):
 
@@ -55,7 +56,7 @@ class CaptionDataset(Dataset):
 
     
 class QADataset(Dataset):
-    def __init__(self, qa_file: str, cache_dir: str = 'Cache/Transformers'):
+    def __init__(self, qa_file: str, cache_dir: str = 'Cache/Transformers',small :bool = False):
         # Load dataset from JSON file
         with open(qa_file, 'r') as file:
             self.dataset = json.load(file)
@@ -63,6 +64,7 @@ class QADataset(Dataset):
         self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
         self.text_encoder = AlbertModel.from_pretrained('albert-base-v2', cache_dir=cache_dir)
         self.text_encoder.eval()
+        self.small = small
         self.mean,self.std = self.compute_mean_and_std()
         self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor(),transforms.Normalize(mean=self.mean, std=self.std)])
         self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor()])
@@ -76,11 +78,11 @@ class QADataset(Dataset):
                 self.data_points.append((img_path, question, answer))
 
     def __len__(self):
-        return len(self.data_points)
+        return len(self.data_points)//32 if self.small else len(self.data_points)
     
     def get_QAimage(self, img_path, question):
         img = Image.open(img_path).convert('RGB')
-        img = self.transform(img)
+        img = self.transfrom(img)
         
         que_ids = self.encode_text(question)
         

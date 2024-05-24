@@ -8,26 +8,45 @@ from transformers import ViTModel, BertModel, AlbertModel, AlbertTokenizer,BertT
 #generator = GPTJModel.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
 
 class Model(nn.Module):
-    def __init__(self,cache_dir:str = 'Cache/Transformers'):
+    def __init__(self,model:str = 'GPT',version:int = 1,cache_dir:str = 'Cache/Transformers'):
         super(Model, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.dir = 'Model'
+        self.model = model
+        self.version = 'v_'+str(version)
 
-        self.image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k',cache_dir=cache_dir)
-        self.image_encoder = ViTModel.from_pretrained("google/vit-base-patch16-224-in21k" ,cache_dir=cache_dir,use_mask_token=True).to(self.device)
+        self.image_encoder = None
+        self.text_encoder = None
+        self.generator = None
+        self.pipeline = None
+        self.classifier = None
 
-        self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
-        self.text_encoder = AlbertModel.from_pretrained('albert-base-v2', cache_dir=cache_dir).to(self.device)
-        
-        self.generator_tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased",cache_dir=cache_dir)
-        self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
-        self.generator = BertModel.from_pretrained('google-bert/bert-base-uncased', cache_dir=cache_dir).to(self.device)
-        """
-        self.generator_tokenizer=AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
-        self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
-        self.generator = GPTJModel.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
-        """
-        self.pipeline =nn.Linear(768,self.generator.config.hidden_size).to(self.device)
-        self.classifier = nn.Linear(self.generator.config.hidden_size, len(self.generator_tokenizer.vocab)).to(self.device)
+        if os.path.exists(os.path.join(self.dir,model, self.version)):
+            self.image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k',cache_dir=cache_dir)
+            self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
+            self.generator_tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased",cache_dir=cache_dir) if self.model == 'BERT' else AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
+            self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
+            self.load_model(version=version)
+            print(sum(p.numel() for p in self.parameters() if p.requires_grad))
+        else:
+
+            self.image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k',cache_dir=cache_dir)
+            self.image_encoder = ViTModel.from_pretrained("google/vit-base-patch16-224-in21k" ,cache_dir=cache_dir,use_mask_token=True).to(self.device)
+
+            self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
+            self.text_encoder = AlbertModel.from_pretrained('albert-base-v2', cache_dir=cache_dir).to(self.device)
+            
+            if self.model == 'BERT':
+                self.generator_tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased",cache_dir=cache_dir)
+                self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
+                self.generator = BertModel.from_pretrained('google-bert/bert-base-uncased', cache_dir=cache_dir).to(self.device)
+            else:
+                self.generator_tokenizer=AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
+                self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
+                self.generator = GPTJModel.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
+
+            self.pipeline =nn.Linear(768,self.generator.config.hidden_size).to(self.device)
+            self.classifier = nn.Linear(self.generator.config.hidden_size, len(self.generator_tokenizer.vocab)).to(self.device)
 
         self = self.to(self.device)
 
@@ -88,16 +107,25 @@ class Model(nn.Module):
         self.pipeline.train()
         self.classifier.train()
 
-    def save_model(self, save_dir: str = 'Model'):
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        torch.save(self.state_dict(), os.path.join(save_dir, 'model.pth'))
-        self.tokenizer.save_pretrained(save_dir)
-        self.generator_tokenizer.save_pretrained(save_dir)
-        self.image_processor.save_pretrained(save_dir)
+    def save_model(self,version:int = 1):
+        version= 'v_'+str(version)
+        if not os.path.exists(os.path.join(self.dir,self.model, version)):
+            os.makedirs(os.path.join(self.dir,self.model, version))
+        self.image_encoder.save_pretrained(os.path.join(self.dir,self.model, version,'VIT'))
+        self.text_encoder.save_pretrained(os.path.join(self.dir,self.model, version,'ALBERT'))
+        self.generator.save_pretrained(os.path.join(self.dir,self.model, version,self.model.upper()))
+        torch.save(self.pipeline.state_dict(), os.path.join(self.dir, self.model, version, 'pipeline.pth'))
+        torch.save(self.classifier.state_dict(), os.path.join(self.dir, self.model, version, 'classifier.pth'))
 
-    def load_model(self, load_dir: str = 'Model'):
-        self.load_state_dict(torch.load(os.path.join(load_dir, 'model.pth'), map_location=self.device))
-        self.tokenizer = AlbertTokenizer.from_pretrained(load_dir)
-        self.generator_tokenizer = BertTokenizer.from_pretrained(load_dir)
-        self.image_processor = ViTImageProcessor.from_pretrained(load_dir)
+    def load_model(self,version:int = 1):
+        version= 'v_'+str(version)
+
+        self.image_encoder = ViTModel.from_pretrained(os.path.join(self.dir,self.model, version,'VIT'))
+        self.text_encoder = AlbertModel.from_pretrained(os.path.join(self.dir,self.model, version,'ALBERT'))
+        self.generator = GPTJModel.from_pretrained(os.path.join(self.dir,self.model, version, self.model.upper())) if self.model == 'GPTJ' else BertModel.from_pretrained(os.path.join(self.dir,self.model, version,self.model.upper()))
+        
+        self.pipeline = nn.Linear(768, self.generator.config.hidden_size).to(self.device)
+        self.pipeline.load_state_dict(torch.load(os.path.join(self.dir, self.model, version, 'pipeline.pth')))
+
+        self.classifier = nn.Linear(self.generator.config.hidden_size, len(self.generator_tokenizer.vocab)).to(self.device)
+        self.classifier.load_state_dict(torch.load(os.path.join(self.dir, self.model, version, 'classifier.pth')))

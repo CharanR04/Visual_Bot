@@ -73,7 +73,7 @@ def one_epoch_QA(model,dataloader,optimizer):
 
     return train_loss
 
-def train_VQA(epoch,model,dataloader,optimizer):
+def train_QA(epoch,model,dataloader,optimizer,version):
     model.set_train()
     model = model.to('cuda')
     print('cuda' if next(model.parameters()).is_cuda else 'cpu')
@@ -95,9 +95,9 @@ def train_VQA(epoch,model,dataloader,optimizer):
                 probablities = model(input_sequence,attention_mask)
                 input_sequence,attention_mask = update_sequence_mask(model,probablities,input_sequence,attention_mask)
 
-                target = target_ids[:, i]
-
+                target = target_ids[:, i].to(model.device)
                 loss += F.cross_entropy(probablities,target)
+            
 
             train_loss += loss
 
@@ -107,9 +107,10 @@ def train_VQA(epoch,model,dataloader,optimizer):
 
         train_loss_history.append(train_loss/len(dataloader))
         print(f'{epoch}:{train_loss/len(dataloader)}')
+    model.save_model(version)
     return train_loss_history
 
-def train_caption(epoch,model,dataloader,optimizer):
+def train_caption(epoch,model,dataloader,optimizer,version):
     model.set_train()
     model = model.to('cuda')
     print('cuda' if next(model.parameters()).is_cuda else 'cpu')
@@ -147,4 +148,5 @@ def train_caption(epoch,model,dataloader,optimizer):
 
         train_loss_history.append(train_loss/len(dataloader))
         print(f'{e}:{train_loss/len(dataloader)}')
-        return train_loss_history
+    model.save_model(version)
+    return train_loss_history
