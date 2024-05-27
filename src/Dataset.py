@@ -6,22 +6,21 @@ from src.API import VizWiz
 from torch.utils.data import Dataset
 from PIL import Image
 from src.Model import Model
-from transformers import AlbertModel, AlbertTokenizer
+from transformers import AlbertModel, AlbertTokenizer, ViTImageProcessor
 from torchvision import transforms
 
 class CaptionDataset(Dataset):
     def __init__(self, captions_file:str, cache_dir:str = 'Cache/Transformers',small:bool= False):
         self.dataset = VizWiz(annotation_file = captions_file)
         self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
-        self.text_encoder = AlbertModel.from_pretrained('albert-base-v2', cache_dir=cache_dir)
-        self.text_encoder.eval()
+        self.image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k',cache_dir=cache_dir)
         self.small = small
-        self.mean,self.std = self.compute_mean_and_std()
-        self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor(),transforms.Normalize(mean=self.mean, std=self.std)])
+        #self.mean,self.std = self.compute_mean_and_std()
+        #self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor(),transforms.Normalize(mean=self.mean, std=self.std)])
         self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor()])
 
     def __len__(self):
-        return len(self.dataset)//32 if self.small else len(self.dataset)
+        return len(self.dataset)//128 if self.small else len(self.dataset)
 
     def __getitem__(self, idx):
 
@@ -39,6 +38,7 @@ class CaptionDataset(Dataset):
         txt_enc = self.encode_text(txt)
 
         img = self.transfrom(img)
+        img = self.image_processor(images=img,do_rescale=False,return_tensors="pt")
 
         return img,txt_enc
     
@@ -62,8 +62,7 @@ class QADataset(Dataset):
             self.dataset = json.load(file)
         
         self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
-        self.text_encoder = AlbertModel.from_pretrained('albert-base-v2', cache_dir=cache_dir)
-        self.text_encoder.eval()
+        self.image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k',cache_dir=cache_dir)
         self.small = small
         self.mean,self.std = self.compute_mean_and_std()
         self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor(),transforms.Normalize(mean=self.mean, std=self.std)])
@@ -78,14 +77,14 @@ class QADataset(Dataset):
                 self.data_points.append((img_path, question, answer))
 
     def __len__(self):
-        return len(self.data_points)//32 if self.small else len(self.data_points)
+        return len(self.data_points)//128 if self.small else len(self.data_points)
     
     def get_QAimage(self, img_path, question):
         img = Image.open(img_path).convert('RGB')
         img = self.transfrom(img)
         
         que_ids = self.encode_text(question)
-        
+    
         return img, que_ids
     
     def encode_text(self, text, max_length=50):
@@ -96,6 +95,7 @@ class QADataset(Dataset):
         img_path, question, answer = self.data_points[index]
         img, que_ids = self.get_QAimage(img_path, question)
         answer_ids = self.encode_text(answer)
+        img = self.image_processor(images=img,do_rescale=False,return_tensors="pt")
         
         return (img, que_ids), answer_ids
     
