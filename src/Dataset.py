@@ -20,7 +20,7 @@ class CaptionDataset(Dataset):
         self.transfrom = transforms.Compose([transforms.Resize((224, 224)),transforms.ToTensor()])
 
     def __len__(self):
-        return len(self.dataset)//128 if self.small else len(self.dataset)
+        return len(self.dataset)//32 if self.small else len(self.dataset)
 
     def __getitem__(self, idx):
 

@@ -1,8 +1,23 @@
 import os
 import torch
+import math
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import ViTModel, BertModel, AlbertModel, AlbertTokenizer,BertTokenizer, ViTImageProcessor, GPTJModel , AutoTokenizer
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, dim, max_len=300):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, dim)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return x + self.pe[:x.size(0), :]
 
 class Model(nn.Module):
     def __init__(self,_model:str = 'GPT',version:int = 1,cache_dir:str = 'Cache/Transformers'):
@@ -12,11 +27,14 @@ class Model(nn.Module):
         self._model = _model
         self.version = 'v_'+str(version)
 
+
         if os.path.exists(os.path.join(self.dir,_model, self.version)):
             self.image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k',cache_dir=cache_dir)
             self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', cache_dir=cache_dir)
             self.generator_tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased",cache_dir=cache_dir) if self._model == 'BERT' else AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
             self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
+            self.relu = nn.ReLU()
+            self.sigmoid = nn.Sigmoid()
             self.load_model(version=version)
             print(sum(p.numel() for p in self.parameters() if p.requires_grad))
         else:
@@ -35,11 +53,12 @@ class Model(nn.Module):
                 self.generator_tokenizer=AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir)
                 self.generator_tokenizer.special_tokens_map['eos_token']='[EOS]'
                 self.generator = GPTJModel.from_pretrained("EleutherAI/gpt-j-6B",cache_dir=cache_dir).to(self.device)
-
             self.relu = nn.ReLU()
             self.sigmoid = nn.Sigmoid()
             self.pipeline =nn.Linear(768,self.generator.config.hidden_size)
             self.classifier = nn.Linear(self.generator.config.hidden_size, len(self.generator_tokenizer.vocab))
+
+        self.positional_encoding = PositionalEncoding(dim=self.generator.config.hidden_size)
 
     def forward(self, input_squence,attention_mask):
         piped_out = self.relu(self.pipeline(input_squence))
@@ -52,6 +71,7 @@ class Model(nn.Module):
         image_embedding = self.encode_image(image)
         text_embedding = self.encode_text(text_ids)
         merged_embedding = self.merge(image_embedding, text_embedding)
+        merged_embedding = self.positional_encoding(merged_embedding)
 
         img_mask = torch.ones(image_embedding.size()[:-1], dtype=torch.long,device=self.device)
         txt_mask = text_ids['attention_mask'].squeeze(1)
