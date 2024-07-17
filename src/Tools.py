@@ -1,13 +1,11 @@
 import torch
 import os
+import torch.nn.functional
 from tqdm import tqdm
 from src.API import VizWiz
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import cv2
-from torchvision import transforms
-from torch.utils.data import DataLoader
-from src.Dataset import QADataset,CaptionDataset
 
 def update_sequence_mask(model,probabilities, input_sequence, attention_mask):
     _, next_token = torch.max(probabilities, dim=-1)
@@ -22,7 +20,8 @@ def update_sequence_mask(model,probabilities, input_sequence, attention_mask):
 def generate_text(model, image, question:str=None, max_length:int=50):
     model.set_eval()
     eos_embedding,eos_attention_mask = get_eos_embedding(model,1)
-    
+    model.to(model.device)
+
     if question:
         q_ids = model.get_text_id(question)
         input_sequence,attention_mask = model.get_sequence(image, q_ids)
@@ -36,7 +35,8 @@ def generate_text(model, image, question:str=None, max_length:int=50):
     generated_tokens = []
 
     for _ in range(max_length):
-        probabilities = model(input_sequence, attention_mask)
+        logits = model(input_sequence=input_sequence, attention_mask=attention_mask)
+        probabilities = torch.nn.functional.softmax(logits[:,-1,:],dim=1)
         _, next_token = torch.max(probabilities, dim=-1)
         
         generated_tokens.append(next_token.item())
@@ -44,12 +44,12 @@ def generate_text(model, image, question:str=None, max_length:int=50):
         next_token_embedding = model.generator.get_input_embeddings()(next_token)
         input_sequence = torch.cat((input_sequence, next_token_embedding.unsqueeze(1)), dim=1)
 
-        new_attention_mask = torch.ones((attention_mask.size(0), 1), dtype=torch.int,device=model.device)
+        new_attention_mask = model.get_next_mask(next_token)
         attention_mask = torch.cat((attention_mask, new_attention_mask), dim=1)
 
     generated_text = model.generator_tokenizer.decode(generated_tokens)
 
-    return generated_text
+    return generated_tokens,attention_mask
 
 def display_captions(dataset:VizWiz,ids: list=[0,1]):
     ids = [id for id in ids if id in dataset.anns]
@@ -92,8 +92,6 @@ def get_one_hot(indices: torch.Tensor, vocab_size: int):
     one_hot_batch.scatter_(2, input_ids.unsqueeze(-1), 1)
     print(one_hot_batch.size())
     return one_hot_batch
-
-
 
 def get_eos_embedding(model,batch_size:int):
     eos_id = model.generator_tokenizer.convert_tokens_to_ids('[EOS]')
